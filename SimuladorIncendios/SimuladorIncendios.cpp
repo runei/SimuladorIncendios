@@ -1,6 +1,7 @@
 #include <iostream>
 #include <thread>
 #include <cstring>
+#include <functional>
 #include "termcolor.hpp"
 
 /*==============================================================================================*/
@@ -70,7 +71,7 @@ private:
 
 void Bombeiro::print()
 {
-	std::cout << termcolor::red << termcolor::on_yellow << valor;
+	std::cout << termcolor::red << valor;
 }
 
 void Bombeiro::mover()
@@ -149,29 +150,29 @@ void Ambiente::print()
 	}
 }
 
+void Ambiente::movimentar(Individuo &ind)
+{
+	while (1)
+	{
+		system("cls");
+		posicao pos = ind.getPos();
+		mapa[pos.linha][pos.coluna] = new Individuo(pos.linha, pos.coluna);
+		ind.mover();
+		pos = ind.getPos();
+		//std::cout << pos.coluna << " - " << pos.linha << std::endl;
+		mapa[pos.linha][pos.coluna] = &ind;
+		print();
+		std::this_thread::sleep_for(std::chrono::seconds(1));
+	}
+}
+
 void Ambiente::adicionaIndividuo(Individuo &ind)
 {
 	posicao pos = ind.getPos();
 	mapa[pos.linha][pos.coluna] = &ind;
 	print();
-	std::thread t(movimentar, ind);
+	std::thread t(&Ambiente::movimentar, this, std::ref(ind));
 	t.join();
-}
-
-void movimentar1(Individuo &ind)
-{
-	return;
-}
-
-void Ambiente::movimentar(Individuo &ind)
-{
-	posicao pos = ind.getPos();
-	mapa[pos.linha][pos.coluna] = new Individuo(pos.linha, pos.coluna);
-	ind.mover();
-	pos = ind.getPos();
-	mapa[pos.linha][pos.coluna] = &ind;
-	print();
-	std::this_thread::sleep_for(std::chrono::seconds(2));
 }
 
 /*==============================================================================================*/
