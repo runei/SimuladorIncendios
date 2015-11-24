@@ -4,6 +4,7 @@
 #include <functional>
 #include <condition_variable>
 #include <mutex>
+#include <list>
 #include "termcolor.hpp"
 
 /*==============================================================================================*/
@@ -21,11 +22,6 @@
 struct posicao {
 	int linha;
 	int coluna;
-};
-
-struct lista_thread {
-	std::thread *thread;
-	lista_thread *prox;
 };
 
 /*==============================================================================================*/
@@ -50,101 +46,12 @@ void gotoxy(int x, int y)
 {
 	int err;
 	if (!cur_term)
-		if (setupterm(NULL, STDOUT_FILENO, &err) == ERR)
-			return;
+	if (setupterm(NULL, STDOUT_FILENO, &err) == ERR)
+		return;
 	putp(tparm(tigetstr("cup"), y, x, 0, 0, 0, 0, 0, 0, 0));
 }
 
 #endif 
-
-/*==============================================================================================*/
-
-class ListaThread
-{
-public:
-	ListaThread();
-	~ListaThread();
-	void adicionar(std::thread &thread);
-	void joinAll();
-	void detachAll();
-private:
-	lista_thread *inicio;
-	lista_thread *fim;
-};
-
-ListaThread::ListaThread()
-{
-	inicio = NULL;
-	fim = NULL;
-}
-
-ListaThread::~ListaThread()
-{
-	lista_thread *aux = inicio;
-
-	while (inicio != NULL)
-	{
-		aux = inicio->prox;
-		std::free(inicio);
-		inicio = aux;;
-	}
-}
-
-void ListaThread::adicionar(std::thread &thread)
-{
-	lista_thread *lt = (lista_thread *)std::malloc(sizeof(lista_thread));
-	lt->thread = &thread;
-	lt->prox = NULL;
-
-	if (inicio == NULL)
-	{
-		inicio = lt;
-		fim = lt;
-	}
-	else if (inicio == fim)
-	{
-		fim = lt;
-		inicio->prox = fim;
-	}
-	else
-	{
-		fim->prox = lt;
-		fim = fim->prox;
-	}
-
-}
-
-void ListaThread::joinAll()
-{
-	if (inicio == NULL)
-	{
-		return;
-	}
-
-	lista_thread *aux = inicio;
-
-	while (aux->prox != NULL)
-	{
-		aux->thread->join();
-		aux = aux->prox;
-	}
-}
-
-void ListaThread::detachAll()
-{
-	if (inicio == NULL)
-	{
-		return;
-	}
-
-	lista_thread *aux = inicio;
-
-	while (aux->prox != NULL)
-	{
-		aux->thread->detach();
-		aux = aux->prox;
-	}
-}
 
 /*==============================================================================================*/
 
@@ -380,9 +287,11 @@ public:
 	void adicionaIndividuo(Individuo &ind);
 	void movimentar(Individuo &ind);
 private:
+	void joinAllThreads();
+	void detachAllThreads();
 	Individuo *mapa[TAM_AMBIENTE_VERT][TAM_AMBIENTE_HOR];
 	Semaforo *sem;
-	ListaThread lista_threads;
+	std::list<std::thread> lista_threads;
 };
 
 Ambiente::Ambiente()
@@ -436,12 +345,29 @@ void Ambiente::adicionaIndividuo(Individuo &ind)
 	posicao pos = ind.getPos();
 	mapa[pos.linha][pos.coluna] = &ind;
 	print();
-	this->lista_threads.detachAll();
+
+	detachAllThreads();
 	std::thread t(&Ambiente::movimentar, this, std::ref(ind));
 	t.detach();
-	this->lista_threads.adicionar(t);
-	this->lista_threads.joinAll();
+	lista_threads.push_back(std::move(t));
+	joinAllThreads();
 	//sem->up();
+}
+
+void Ambiente::joinAllThreads()
+{
+	for (auto it = lista_threads.begin(); it != lista_threads.end(); ++it)
+	{
+		it->join();
+	}
+}
+
+void Ambiente::detachAllThreads()
+{
+	for (auto it = lista_threads.begin(); it != lista_threads.end(); ++it)
+	{
+		it->detach();
+	}
 }
 
 /*==============================================================================================*/
