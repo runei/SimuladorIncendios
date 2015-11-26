@@ -196,7 +196,7 @@ void Bombeiro::mover()
 }
 
 /*==============================================================================================*/
-/*
+
 class Refugiado : public Individuo
 {
 public:
@@ -251,8 +251,8 @@ void Refugiado::mover()
 
 }
 
-*==============================================================================================*/
-/*
+/*==============================================================================================*/
+
 class Fogo : public Individuo
 {
 public:
@@ -277,7 +277,8 @@ void Fogo::mover()
 	pos.linha = rand() % TAM_AMBIENTE_VERT;
 	pos.coluna = rand() % TAM_AMBIENTE_HOR;
 }
-*/
+
+
 /*==============================================================================================*/
 
 class Ambiente
@@ -376,12 +377,9 @@ void Ambiente::detachAllThreads()
 int main()
 {
 	Ambiente amb;
-	//Fogo b[2];
+	Fogo b[2];
 	int i;
-	//int linha, coluna;
 	srand(time(NULL));
-
-	Bombeiro b[2];
 
 	for (i = 0; i < 2; i++)
 	{
