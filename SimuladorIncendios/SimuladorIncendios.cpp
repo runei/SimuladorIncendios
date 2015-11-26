@@ -4,7 +4,7 @@
 #include <functional>
 #include <condition_variable>
 #include <mutex>
-#include <list>
+#include <vector>
 #include "termcolor.hpp"
 
 /*==============================================================================================*/
@@ -83,14 +83,12 @@ void Semaforo::up()
 
 void Semaforo::down()
 {
-	mutex.lock();
 	while (this->recursos == 0)
 	{
 		std::unique_lock<std::mutex> lck(mutex);
 		cv.wait(lck);
 	}
 	this->recursos--;
-	mutex.unlock();
 }
 
 /*==============================================================================================*/
@@ -293,7 +291,8 @@ private:
 	void detachAllThreads();
 	Individuo *mapa[TAM_AMBIENTE_VERT][TAM_AMBIENTE_HOR];
 	Semaforo *sem;
-	std::list<std::thread> lista_threads;
+	std::vector<std::thread> lista_threads;
+	std::mutex m;
 };
 
 Ambiente::Ambiente()
@@ -326,18 +325,25 @@ void Ambiente::print()
 
 void Ambiente::movimentar(Individuo &ind)
 {
-	while (1)
-	{
-		//sem->down();
-		posicao pos = ind.getPos();
-		mapa[pos.linha][pos.coluna] = new Individuo(pos.linha, pos.coluna);
-		mapa[pos.linha][pos.coluna]->print();
-		ind.mover();
-		pos = ind.getPos();
-		mapa[pos.linha][pos.coluna] = &ind;
-		mapa[pos.linha][pos.coluna]->print();
-		//sem->up();
-		std::this_thread::sleep_for(std::chrono::seconds(1));
+	try {
+		while (1)
+		{
+//			sem->down();
+			m.lock();
+			posicao pos = ind.getPos();
+			mapa[pos.linha][pos.coluna] = new Individuo(pos.linha, pos.coluna);
+			mapa[pos.linha][pos.coluna]->print();
+			ind.mover();
+			pos = ind.getPos();
+			mapa[pos.linha][pos.coluna] = &ind;
+			mapa[pos.linha][pos.coluna]->print();
+			m.unlock();
+//			sem->up();
+			std::this_thread::sleep_for(std::chrono::seconds(1));
+		}
+	}
+	catch (std::system_error e) {
+		std::cout << e.what();
 	}
 }
 
@@ -347,28 +353,51 @@ void Ambiente::adicionaIndividuo(Individuo &ind)
 	posicao pos = ind.getPos();
 	mapa[pos.linha][pos.coluna] = &ind;
 	print();
+	Fogo b[2];
+	for (int i = 0; i < 2; i++)
+	{
+		posicao pos;
+		pos.linha = rand() % TAM_AMBIENTE_VERT;
+		pos.coluna = rand() % TAM_AMBIENTE_HOR;
+		b[i].setPos(pos);
+		std::thread t(&Ambiente::movimentar, this, std::ref(b[i]));
+		lista_threads.push_back(std::move(t));
+	}
 
-	detachAllThreads();
-	std::thread t(&Ambiente::movimentar, this, std::ref(ind));
-	t.detach();
-	lista_threads.push_back(std::move(t));
-	joinAllThreads();
+	std::thread t(&Ambiente::movimentar, this, std::ref(b[0]));
+	std::thread t1(&Ambiente::movimentar, this, std::ref(b[1]));
+
+	t.join();
+	t1.join();
+
+/*	int tam = lista_threads.size();
+	for (int i = 0; i < tam; ++i)
+	{
+		lista_threads[i].detach();
+	}*/
+
+		//t.join();
+
+	//lista_threads.push_back(std::move(t));
+//	joinAllThreads();
 	//sem->up();
 }
 
 void Ambiente::joinAllThreads()
 {
-	for (auto it = lista_threads.begin(); it != lista_threads.end(); ++it)
+	int tam = lista_threads.size();
+	for (int i = 0; i < tam; ++i)
 	{
-		it->join();
+		lista_threads[i].join();
 	}
 }
 
 void Ambiente::detachAllThreads()
 {
-	for (auto it = lista_threads.begin(); it != lista_threads.end(); ++it)
+	int tam = lista_threads.size();
+	for (int i = 0; i < tam; ++i)
 	{
-		it->detach();
+		lista_threads[i].detach();
 	}
 }
 
@@ -381,14 +410,14 @@ int main()
 	int i;
 	srand(time(NULL));
 
-	for (i = 0; i < 2; i++)
-	{
+//	for (i = 0; i < 2; i++)
+//	{
 		posicao pos;
 		pos.linha = rand() % TAM_AMBIENTE_VERT;
 		pos.coluna = rand() % TAM_AMBIENTE_HOR;
-		b[i].setPos(pos);
-		amb.adicionaIndividuo(b[i]);
-	}
+		b[0].setPos(pos);
+		amb.adicionaIndividuo(b[0]);
+//	}
 
 	std::cin.ignore();
 
