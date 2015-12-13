@@ -1,35 +1,60 @@
 #include <iostream>
-#include <thread>
-#include <cstring>
+#include <future>
+#include <random>
 #include <functional>
-#include <condition_variable>
-#include <mutex>
-#include <vector>
-#include "termcolor.hpp"
+#include <chrono>
+#include <thread>
+#include <memory>
+#include <string>
+#include <sstream>
 
-/*==============================================================================================*/
-
-#define TAM_AMBIENTE_VERT 22
-#define TAM_AMBIENTE_HOR 75
+#define TAMANHO_MAPA 10
 #define NROLADOS 4
 #define ESQUERDA 0
 #define NORTE 1
 #define DIREITA 2
 #define SUL 3
 
-/*==============================================================================================*/
-
-struct posicao {
-	int linha;
-	int coluna;
-};
-
-/*==============================================================================================*/
-//MOVER O CURSOR
-
 #ifdef _WIN32
 
 #include <windows.h>
+
+void cls()
+{
+
+	HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+	COORD coordScreen = { 0, 0 };    // home for the cursor 
+	DWORD cCharsWritten;
+	CONSOLE_SCREEN_BUFFER_INFO csbi;
+	DWORD dwConSize;
+
+	// Get the number of character cells in the current buffer. 
+
+	if (!GetConsoleScreenBufferInfo(hConsole, &csbi))
+		return;
+	dwConSize = csbi.dwSize.X * csbi.dwSize.Y;
+
+	// Fill the entire screen with blanks.
+
+	if (!FillConsoleOutputCharacter(hConsole, (TCHAR) ' ',
+		dwConSize, coordScreen, &cCharsWritten))
+		return;
+
+	// Get the current text attribute.
+
+	if (!GetConsoleScreenBufferInfo(hConsole, &csbi))
+		return;
+
+	// Set the buffer's attributes accordingly.
+
+	if (!FillConsoleOutputAttribute(hConsole, csbi.wAttributes,
+		dwConSize, coordScreen, &cCharsWritten))
+		return;
+
+	// Put the cursor at its home coordinates.
+
+	SetConsoleCursorPosition(hConsole, coordScreen);
+}
 
 void gotoxy(int x, int y)
 {
@@ -37,11 +62,17 @@ void gotoxy(int x, int y)
 	SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), p);
 }
 
+
 #else
 
 #include <unistd.h>
 #include <term.h>
 #include <curses.h>
+
+void cls()
+{
+	std::cout << "\x1B[2J\x1B[H";
+}
 
 void gotoxy(int x, int y)
 {
@@ -54,372 +85,388 @@ void gotoxy(int x, int y)
 
 #endif 
 
-/*==============================================================================================*/
-
-class Semaforo
+enum Tipo
 {
-public:
-	Semaforo(int recursos);
-	void up();
-	void down();
-private:
-	int recursos;
-	std::mutex mutex;
-	std::condition_variable cv;
+	VAZIO,
+	BOMBEIRO,
+	FOGO,
+	REFUGIADO,
+	VITIMA
 };
 
-Semaforo::Semaforo(int recursos)
+class Entidade
 {
-	this->recursos = recursos;
-}
-
-void Semaforo::up()
-{
-	mutex.lock();
-	this->recursos++;
-	cv.notify_all();
-	mutex.unlock();
-}
-
-void Semaforo::down()
-{
-	while (this->recursos == 0)
-	{
-		std::unique_lock<std::mutex> lck(mutex);
-		cv.wait(lck);
-	}
-	this->recursos--;
-}
-
-/*==============================================================================================*/
-
-class Individuo
-{
+	std::string representacao;
+	Tipo tipo;
 public:
-	Individuo(int linha, int col);
-	Individuo() {}
-	virtual void print();
-	virtual void mover();
-	posicao getPos();
-	void setPos(posicao pos);
+	Entidade(std::string _r, Tipo _t, int _l, int _c) : representacao(_r), tipo(_t), linha(_l), coluna(_c) {}
+	inline Tipo getTipo() { return tipo; }
+	inline int getLinha() { return linha; }
+	inline int getColuna() { return coluna; }
+	std::string getRepresentacao();
+	void setRepresentacao(std::string);
+	virtual void moverEntidade();
+	void print();
 protected:
-	posicao pos;
-private:
-	static const unsigned char valor;
+	int linha, coluna;
 };
 
-const unsigned char Individuo::valor = 219;
-
-Individuo::Individuo(int linha, int col)
-{
-	pos.coluna = col;
-	pos.linha = linha;
-}
-
-void Individuo::print()
-{
-	gotoxy(pos.coluna, pos.linha);
-	std::cout << termcolor::white << valor;
-}
-
-void Individuo::mover()
-{
-	return;
-}
-
-posicao Individuo::getPos()
-{
-	return this->pos;
-}
-
-void Individuo::setPos(posicao pos)
-{
-	this->pos = pos;
-}
-
-/*==============================================================================================*/
-
-class Bombeiro : public Individuo
-{
-public:
-	Bombeiro(int linha, int col) : Individuo(linha, col) {}
-	Bombeiro() {}
-	void print();
-	void mover();
-private:
-	static const unsigned char valor;
-};
-
-const unsigned char Bombeiro::valor = 'B';
-
-void Bombeiro::print()
-{
-	gotoxy(pos.coluna, pos.linha);
-	std::cout << termcolor::red << valor;
-}
-
-void Bombeiro::mover()
+void Entidade::moverEntidade()
 {
 	int m = rand() % NROLADOS;
 	switch (m)
 	{
 	case ESQUERDA:
-		if (pos.coluna > 0)
+		if (coluna > 0)
 		{
-			pos.coluna--;
+			coluna--;
 		}
 		break;
 	case DIREITA:
-		if (pos.coluna < TAM_AMBIENTE_HOR)
+		if (coluna < TAMANHO_MAPA)
 		{
-			pos.coluna++;
+			coluna++;
 		}
 		break;
 	case NORTE:
-		if (pos.linha > 0)
+		if (linha > 0)
 		{
-			pos.linha--;
+			linha--;
 		}
 		break;
 	case SUL:
-		if (pos.linha < TAM_AMBIENTE_VERT)
+		if (linha < TAMANHO_MAPA)
 		{
-			pos.linha++;
+			linha++;
 		}
 		break;
 	default:
 		break;
 	}
-
 }
 
-/*==============================================================================================*/
-
-class Refugiado : public Individuo
+void Entidade::setRepresentacao(std::string r)
 {
+	representacao = r;
+}
+
+std::string Entidade::getRepresentacao()
+{
+	return representacao;
+}
+
+void Entidade::print()
+{
+	gotoxy(coluna * 3, linha);
+	std::cout << representacao;
+}
+
+class Bombeiro : public Entidade
+{
+	bool carregado = false;
 public:
-	Refugiado(int linha, int col) : Individuo(linha, col) {}
-	Refugiado() {}
-	void print();
-	void mover();
-private:
-	static const unsigned char valor;
+	Bombeiro(std::string r, int l, int c) : Entidade(r, Tipo::BOMBEIRO, l, c) {}
+	virtual void moverEntidade();
+	void carregar();
+	void descarregar();
 };
 
-const unsigned char Refugiado::valor = 'R';
-
-void Refugiado::print()
+void Bombeiro::moverEntidade()
 {
-	gotoxy(pos.coluna, pos.linha);
-	std::cout << termcolor::cyan << valor;
+	if (carregado)
+	{
+		//move pra ambulancia
+	}
+
+	int m = rand() % NROLADOS;
+	switch (m)
+	{
+	case ESQUERDA:
+		if (coluna > 0)
+		{
+			coluna--;
+		}
+		break;
+	case DIREITA:
+		if (coluna < TAMANHO_MAPA)
+		{
+			coluna++;
+		}
+		break;
+	case NORTE:
+		if (linha > 0)
+		{
+			linha--;
+		}
+		break;
+	case SUL:
+		if (linha < TAMANHO_MAPA)
+		{
+			linha++;
+		}
+		break;
+	default:
+		break;
+	}
 }
 
-void Refugiado::mover()
+void Bombeiro::carregar()
+{
+	carregado = true;
+}
+
+void Bombeiro::descarregar()
+{
+	carregado = false;
+}
+
+class Fogo : public Entidade
+{
+public:
+	Fogo(std::string r, int l, int c) : Entidade(r, Tipo::FOGO, l, c) {}
+	virtual void moverEntidade();
+};
+
+void Fogo::moverEntidade()
+{
+	linha = rand() % TAMANHO_MAPA;
+	coluna = rand() % TAMANHO_MAPA;
+}
+
+class Vitima : public Entidade
+{
+public:
+	Vitima(std::string r, int l, int c) : Entidade(r, Tipo::VITIMA, l, c) {}
+};
+
+class Refugiado : public Entidade
+{
+public:
+	Refugiado(std::string r, int l, int c) : Entidade(r, Tipo::REFUGIADO, l, c) {}
+	virtual void moverEntidade();
+};
+
+void Refugiado::moverEntidade()
 {
 	int m = rand() % NROLADOS;
 	switch (m)
 	{
 	case ESQUERDA:
-		if (pos.coluna > 0)
+		if (coluna > 0)
 		{
-			pos.coluna--;
+			coluna--;
 		}
 		break;
 	case DIREITA:
-		if (pos.coluna < TAM_AMBIENTE_HOR)
+		if (coluna < TAMANHO_MAPA)
 		{
-			pos.coluna++;
+			coluna++;
 		}
 		break;
 	case NORTE:
-		if (pos.linha > 0)
+		if (linha > 0)
 		{
-			pos.linha--;
+			linha--;
 		}
 		break;
 	case SUL:
-		if (pos.linha < TAM_AMBIENTE_VERT)
+		if (linha < TAMANHO_MAPA)
 		{
-			pos.linha++;
+			linha++;
 		}
 		break;
 	default:
 		break;
 	}
-
 }
 
-/*==============================================================================================*/
+/////////////////// Entidades
 
-class Fogo : public Individuo
+using VetorPtrEntidades = std::vector<std::vector<std::shared_ptr<Entidade>>>;
+
+VetorPtrEntidades entidades;
+std::mutex m_mutex;
+VetorPtrEntidades iniEntidades();
+
+int n_bombeiros = 0;
+
+VetorPtrEntidades iniEntidades()
 {
-public:
-	Fogo(int linha, int col) : Individuo(linha, col) {}
-	Fogo() {}
-	void print();
-	void mover();
-private:
-	static const unsigned char valor;
-};
-
-const unsigned char Fogo::valor = 'F';
-
-void Fogo::print()
-{
-	gotoxy(pos.coluna, pos.linha);
-	std::cout << termcolor::yellow << valor;
-}
-
-void Fogo::mover()
-{
-	pos.linha = rand() % TAM_AMBIENTE_VERT;
-	pos.coluna = rand() % TAM_AMBIENTE_HOR;
-}
-
-
-/*==============================================================================================*/
-
-class Ambiente
-{
-public:
-	Ambiente();
-	void print();
-	void adicionaIndividuo(Individuo &ind);
-	void movimentar(Individuo &ind);
-private:
-	void joinAllThreads();
-	void detachAllThreads();
-	Individuo *mapa[TAM_AMBIENTE_VERT][TAM_AMBIENTE_HOR];
-	Semaforo *sem;
-	std::vector<std::thread> lista_threads;
-	std::mutex m;
-};
-
-Ambiente::Ambiente()
-{
-	sem = new Semaforo(1);
-
-	int i, j;
-	for (i = 0; i < TAM_AMBIENTE_VERT; i++)
+	VetorPtrEntidades _entidades;
+	for (int l = 0; l < TAMANHO_MAPA; ++l)
 	{
-		for (j = 0; j < TAM_AMBIENTE_HOR; j++)
+		std::vector<std::shared_ptr<Entidade>> _e;
+		for (int c = 0; c < TAMANHO_MAPA; ++c)
 		{
-			mapa[i][j] = new Individuo(i, j);
+			_e.push_back(std::make_shared<Entidade>(std::string{ "   " }, Tipo::VAZIO, l, c));
 		}
-		std::cout << std::endl;
+		_entidades.push_back(_e);
 	}
+	return _entidades;
 }
 
-void Ambiente::print()
+void printMapa()
 {
-	int i, j;
-	for (i = 0; i < TAM_AMBIENTE_VERT; i++)
+	std::stringstream msg;
+	for (auto & i : entidades)
 	{
-		for (j = 0; j < TAM_AMBIENTE_HOR; j++)
+		for (auto & j : i)
 		{
-			mapa[i][j]->print();
+			//msg << " | ";
+			msg << j->getRepresentacao();
+			//msg << " | ";
 		}
-		std::cout << std::endl;
+		msg << "\n";
 	}
+	msg << "N Bombeiros " << n_bombeiros << "\n";
+	//msg << "\x1B[2J\x1B[H"; // limpar tela unix, verificar windows
+	std::cout << msg.str();
 }
 
-void Ambiente::movimentar(Individuo &ind)
+bool verificaPosicaoValida(int linha, int coluna)
 {
-	try {
-		while (1)
+	if (linha < TAMANHO_MAPA && linha > -1
+		&& coluna < TAMANHO_MAPA && coluna > -1)
+		return true;
+	return false;
+}
+
+void setarEntidade(std::shared_ptr<Entidade> e, int linha, int coluna)
+{
+	if (verificaPosicaoValida(linha, coluna))
+	{
+		std::lock_guard<std::mutex> guard(m_mutex);
+		entidades[linha][coluna] = e;
+	}
+	else
+	{
+		return;
+	}
+	for (;;)
+	{
+		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+
 		{
-//			sem->down();
-			m.lock();
-			posicao pos = ind.getPos();
-			mapa[pos.linha][pos.coluna] = new Individuo(pos.linha, pos.coluna);
-			mapa[pos.linha][pos.coluna]->print();
-			ind.mover();
-			pos = ind.getPos();
-			mapa[pos.linha][pos.coluna] = &ind;
-			mapa[pos.linha][pos.coluna]->print();
-			m.unlock();
-//			sem->up();
-			std::this_thread::sleep_for(std::chrono::seconds(1));
+			{
+				std::lock_guard<std::mutex> guard(m_mutex);
+				gotoxy(0, TAMANHO_MAPA + 1);
+				std::cout << "Tempo 0000" << std::endl;
+			}
+			{
+				std::lock_guard<std::mutex> guard(m_mutex);
+				gotoxy(0, TAMANHO_MAPA + 2);
+				std::cout << "N bombeiros " << n_bombeiros << std::endl;
+			}
+			{
+				std::lock_guard<std::mutex> guard(m_mutex);
+				gotoxy(0, TAMANHO_MAPA + 3);
+				std::cout << "Refugiados" << std::endl;
+			}
+			{
+				std::lock_guard<std::mutex> guard(m_mutex);
+				gotoxy(0, TAMANHO_MAPA + 4);
+				std::cout << "Vitimas fatais" << std::endl;
+			}
+			{
+				std::lock_guard<std::mutex> guard(m_mutex);
+				gotoxy(0, TAMANHO_MAPA + 5);
+				std::cout << "Vitimas salvas" << std::endl;
+			}
 		}
-	}
-	catch (std::system_error e) {
-		std::cout << e.what();
+
+		// tirar da posicao anterior
+		if (verificaPosicaoValida(e->getLinha(), e->getColuna()))
+		{
+			// escopo do mutex
+			{
+				std::lock_guard<std::mutex> guard(m_mutex);
+				entidades[e->getLinha()][e->getColuna()] = std::make_shared<Entidade>(std::string{ "   " }, Tipo::VAZIO, e->getLinha(), e->getColuna());
+				entidades[e->getLinha()][e->getColuna()]->print();
+			}
+		}
+
+		e->moverEntidade();
+
+		if (verificaPosicaoValida(e->getLinha(), e->getColuna()))
+		{
+			if ((e->getTipo() == Tipo::FOGO && entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::REFUGIADO) ||
+				(e->getTipo() == Tipo::REFUGIADO && entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::FOGO))
+			{
+				std::lock_guard<std::mutex> guard(m_mutex);
+				entidades[e->getLinha()][e->getColuna()] = std::make_shared<Vitima>(std::string{ "V  " }, e->getLinha(), e->getColuna());
+			}
+			else if (e->getTipo() == Tipo::FOGO && entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::BOMBEIRO)
+			{
+				continue;
+			}
+			else if (e->getTipo() == Tipo::BOMBEIRO && entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::VITIMA)
+			{
+				//bombeiro carregar
+			}
+			else if (entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::VAZIO)
+			{
+				std::lock_guard<std::mutex> guard(m_mutex);
+				entidades[e->getLinha()][e->getColuna()] = e;
+			}
+
+			{
+				std::lock_guard<std::mutex> guard(m_mutex);
+				entidades[e->getLinha()][e->getColuna()]->print();
+			}
+		}
+		/*
+		else
+		{
+			// cai fora do mapa
+			return;
+		}
+		*/
 	}
 }
 
-void Ambiente::adicionaIndividuo(Individuo &ind)
+void printAmbulancia()
 {
-	//sem->down();
-	posicao pos = ind.getPos();
-	mapa[pos.linha][pos.coluna] = &ind;
-	print();
-	Fogo b[2];
-	for (int i = 0; i < 2; i++)
-	{
-		posicao pos;
-		pos.linha = rand() % TAM_AMBIENTE_VERT;
-		pos.coluna = rand() % TAM_AMBIENTE_HOR;
-		b[i].setPos(pos);
-		std::thread t(&Ambiente::movimentar, this, std::ref(b[i]));
-		lista_threads.push_back(std::move(t));
-	}
-
-	std::thread t(&Ambiente::movimentar, this, std::ref(b[0]));
-	std::thread t1(&Ambiente::movimentar, this, std::ref(b[1]));
-
-	t.join();
-	t1.join();
-
-/*	int tam = lista_threads.size();
-	for (int i = 0; i < tam; ++i)
-	{
-		lista_threads[i].detach();
-	}*/
-
-		//t.join();
-
-	//lista_threads.push_back(std::move(t));
-//	joinAllThreads();
-	//sem->up();
+	int linha = TAMANHO_MAPA;
+	int coluna = (TAMANHO_MAPA - 3) * 3;
+	gotoxy(coluna, linha);
+	std::cout << "A  A  A  ";
 }
-
-void Ambiente::joinAllThreads()
-{
-	int tam = lista_threads.size();
-	for (int i = 0; i < tam; ++i)
-	{
-		lista_threads[i].join();
-	}
-}
-
-void Ambiente::detachAllThreads()
-{
-	int tam = lista_threads.size();
-	for (int i = 0; i < tam; ++i)
-	{
-		lista_threads[i].detach();
-	}
-}
-
-/*==============================================================================================*/
 
 int main()
 {
-	Ambiente amb;
-	Fogo b[2];
-	int i;
-	srand(time(NULL));
+	entidades = iniEntidades();
+	std::vector<std::future<void>> futures;
 
-//	for (i = 0; i < 2; i++)
-//	{
-		posicao pos;
-		pos.linha = rand() % TAM_AMBIENTE_VERT;
-		pos.coluna = rand() % TAM_AMBIENTE_HOR;
-		b[0].setPos(pos);
-		amb.adicionaIndividuo(b[0]);
-//	}
+	printAmbulancia();
 
-	std::cin.ignore();
+	for (int i = 0; i < 10; ++i)
+	{
+		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+		std::mt19937::result_type seed = time(0);
+		auto random_ij = std::bind(std::uniform_int_distribution<int>(0, 9), std::mt19937(seed));
+		int l = random_ij(); int c = random_ij();
+		if (random_ij() % 3)
+		{
+			std::shared_ptr<Bombeiro> b = std::make_shared<Bombeiro>(std::string{ "B  " }, l, c); // + std::to_string(i), l, c};
+			n_bombeiros++;
+			futures.push_back(std::async(std::launch::async, setarEntidade, b, l, c));
+		}
+		else if (random_ij() % 2)
+		{
+			std::shared_ptr<Refugiado> f = std::make_shared<Refugiado>(std::string{ "R  " }, l, c); // + std::to_string(i), l, c};
+			futures.push_back(std::async(std::launch::async, setarEntidade, f, l, c));
+		}
+		else
+		{
+			std::shared_ptr<Fogo> f = std::make_shared<Fogo>(std::string{ "F  " }, l, c); // + std::to_string(i), l, c};
+			futures.push_back(std::async(std::launch::async, setarEntidade, f, l, c));
+		}
+	}
+
+	for (auto & e : futures)
+	{
+		e.get();
+	}
 
 	return 0;
 }
