@@ -289,6 +289,10 @@ std::mutex m_mutex;
 VetorPtrEntidades iniEntidades();
 
 int n_bombeiros = 0;
+int tempo = 0;
+int n_vitimas_salvas = 0;
+int n_vitimas_fatais = 0;
+int n_refugiados = 0;
 
 VetorPtrEntidades iniEntidades()
 {
@@ -350,7 +354,7 @@ void setarEntidade(std::shared_ptr<Entidade> e, int linha, int coluna)
 			{
 				std::lock_guard<std::mutex> guard(m_mutex);
 				gotoxy(0, TAMANHO_MAPA + 1);
-				std::cout << "Tempo 0000" << std::endl;
+				std::cout << "Tempo " << tempo++ << std::endl;
 			}
 			{
 				std::lock_guard<std::mutex> guard(m_mutex);
@@ -360,17 +364,17 @@ void setarEntidade(std::shared_ptr<Entidade> e, int linha, int coluna)
 			{
 				std::lock_guard<std::mutex> guard(m_mutex);
 				gotoxy(0, TAMANHO_MAPA + 3);
-				std::cout << "Refugiados" << std::endl;
+				std::cout << "Refugiados " << n_refugiados << std::endl;
 			}
 			{
 				std::lock_guard<std::mutex> guard(m_mutex);
 				gotoxy(0, TAMANHO_MAPA + 4);
-				std::cout << "Vitimas fatais" << std::endl;
+				std::cout << "Vitimas fatais " << n_vitimas_fatais << std::endl;
 			}
 			{
 				std::lock_guard<std::mutex> guard(m_mutex);
 				gotoxy(0, TAMANHO_MAPA + 5);
-				std::cout << "Vitimas salvas" << std::endl;
+				std::cout << "Vitimas salvas " << n_vitimas_salvas << std::endl;
 			}
 		}
 
@@ -402,6 +406,7 @@ void setarEntidade(std::shared_ptr<Entidade> e, int linha, int coluna)
 			else if (e->getTipo() == Tipo::BOMBEIRO && entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::VITIMA)
 			{
 				//bombeiro carregar
+				n_vitimas_salvas++; // soh qdo levar pra ambulancia 
 			}
 			else if (entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::VAZIO)
 			{
@@ -454,6 +459,7 @@ int main()
 		else if (random_ij() % 2)
 		{
 			std::shared_ptr<Refugiado> f = std::make_shared<Refugiado>(std::string{ "R  " }, l, c); // + std::to_string(i), l, c};
+			n_refugiados++;
 			futures.push_back(std::async(std::launch::async, setarEntidade, f, l, c));
 		}
 		else
