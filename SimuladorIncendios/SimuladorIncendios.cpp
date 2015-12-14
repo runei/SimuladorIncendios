@@ -8,12 +8,16 @@
 #include <string>
 #include <sstream>
 
+/*==============================================================================================*/
+
 #define TAMANHO_MAPA 10
 #define NROLADOS 4
 #define ESQUERDA 0
 #define NORTE 1
 #define DIREITA 2
 #define SUL 3
+
+/*==============================================================================================*/
 
 #ifdef _WIN32
 
@@ -85,6 +89,8 @@ void gotoxy(int x, int y)
 
 #endif 
 
+/*==============================================================================================*/
+
 enum Tipo
 {
 	VAZIO,
@@ -93,6 +99,15 @@ enum Tipo
 	REFUGIADO,
 	VITIMA
 };
+
+enum SituacaoVitima
+{
+	MORRENDO,
+	CARREGADO,
+	SALVO
+};
+
+/*==============================================================================================*/
 
 class Entidade
 {
@@ -103,6 +118,8 @@ public:
 	inline Tipo getTipo() { return tipo; }
 	inline int getLinha() { return linha; }
 	inline int getColuna() { return coluna; }
+	inline void setLinha(int l) { linha - l; }
+	inline void setColuna(int c) { coluna = c; }
 	std::string getRepresentacao();
 	void setRepresentacao(std::string);
 	virtual void moverEntidade();
@@ -113,36 +130,7 @@ protected:
 
 void Entidade::moverEntidade()
 {
-	int m = rand() % NROLADOS;
-	switch (m)
-	{
-	case ESQUERDA:
-		if (coluna > 0)
-		{
-			coluna--;
-		}
-		break;
-	case DIREITA:
-		if (coluna < TAMANHO_MAPA)
-		{
-			coluna++;
-		}
-		break;
-	case NORTE:
-		if (linha > 0)
-		{
-			linha--;
-		}
-		break;
-	case SUL:
-		if (linha < TAMANHO_MAPA)
-		{
-			linha++;
-		}
-		break;
-	default:
-		break;
-	}
+	return;
 }
 
 void Entidade::setRepresentacao(std::string r)
@@ -161,83 +149,24 @@ void Entidade::print()
 	std::cout << representacao;
 }
 
-class Bombeiro : public Entidade
-{
-	bool carregado = false;
-public:
-	Bombeiro(std::string r, int l, int c) : Entidade(r, Tipo::BOMBEIRO, l, c) {}
-	virtual void moverEntidade();
-	void carregar();
-	void descarregar();
-};
+/*==============================================================================================*/
+//VARIAVEIS GLOBAIS
 
-void Bombeiro::moverEntidade()
-{
-	if (carregado)
-	{
-		//move pra ambulancia
-	}
+using VetorPtrEntidades = std::vector<std::vector<std::shared_ptr<Entidade>>>;
 
-	int m = rand() % NROLADOS;
-	switch (m)
-	{
-	case ESQUERDA:
-		if (coluna > 0)
-		{
-			coluna--;
-		}
-		break;
-	case DIREITA:
-		if (coluna < TAMANHO_MAPA)
-		{
-			coluna++;
-		}
-		break;
-	case NORTE:
-		if (linha > 0)
-		{
-			linha--;
-		}
-		break;
-	case SUL:
-		if (linha < TAMANHO_MAPA)
-		{
-			linha++;
-		}
-		break;
-	default:
-		break;
-	}
-}
+VetorPtrEntidades entidades;
+std::mutex m_mutex;
+VetorPtrEntidades iniEntidades();
+void setarEntidade(std::shared_ptr<Entidade> e, int linha, int coluna);
+std::vector<std::future<void>> futures;
 
-void Bombeiro::carregar()
-{
-	carregado = true;
-}
+int n_bombeiros = 0;
+int tempo = 0;
+int n_vitimas_salvas = 0;
+int n_vitimas_fatais = 0;
+int n_refugiados = 0;
 
-void Bombeiro::descarregar()
-{
-	carregado = false;
-}
-
-class Fogo : public Entidade
-{
-public:
-	Fogo(std::string r, int l, int c) : Entidade(r, Tipo::FOGO, l, c) {}
-	virtual void moverEntidade();
-};
-
-void Fogo::moverEntidade()
-{
-	linha = rand() % TAMANHO_MAPA;
-	coluna = rand() % TAMANHO_MAPA;
-}
-
-class Vitima : public Entidade
-{
-public:
-	Vitima(std::string r, int l, int c) : Entidade(r, Tipo::VITIMA, l, c) {}
-};
+/*==============================================================================================*/
 
 class Refugiado : public Entidade
 {
@@ -280,19 +209,141 @@ void Refugiado::moverEntidade()
 	}
 }
 
+/*==============================================================================================*/
+
+class Vitima : public Entidade
+{
+	int tempo;
+	SituacaoVitima sit;
+public:
+	Vitima(std::string r, int l, int c) : Entidade(r, Tipo::VITIMA, l, c) { tempo = 100; sit = MORRENDO; }
+	SituacaoVitima getSit() { return sit; }
+	void carregar() { sit = CARREGADO;  }
+	void salvar() { sit = SALVO; }
+	void diminuiVida() { tempo--; }
+	int getTempo() { return tempo; }
+};
+
+/*==============================================================================================*/
+
+class Bombeiro : public Entidade
+{
+	std::shared_ptr<Entidade> vit = NULL;
+public:
+	Bombeiro(std::string r, int l, int c) : Entidade(r, Tipo::BOMBEIRO, l, c) {}
+	virtual void moverEntidade();
+	void carregar(std::shared_ptr<Entidade> vit);
+	void descarregar();
+	std::shared_ptr<Entidade> getVit() { return vit; }
+};
+
+void Bombeiro::moverEntidade()
+{
+	int m;
+	if (vit != NULL)
+	{
+		if (coluna < TAMANHO_MAPA - 2)
+		{
+			m = DIREITA;
+		}
+		else
+		{
+			if (linha == TAMANHO_MAPA - 1)
+			{
+				descarregar();
+			}
+			m = SUL;
+		}
+	}
+	else if (coluna > 0 &&
+		(entidades[getLinha()][getColuna() - 1]->getTipo() == Tipo::FOGO ||
+		entidades[getLinha()][getColuna() - 1]->getTipo() == Tipo::VITIMA))
+	{
+		m = ESQUERDA;
+	}
+	else if (coluna < TAMANHO_MAPA - 1 &&
+		(entidades[getLinha()][getColuna() + 1]->getTipo() == Tipo::FOGO ||
+		entidades[getLinha()][getColuna() + 1]->getTipo() == Tipo::VITIMA))
+	{
+		m = DIREITA;
+	}
+	else if (linha > 0 &&
+		(entidades[getLinha() - 1][getColuna()]->getTipo() == Tipo::FOGO ||
+		entidades[getLinha() - 1][getColuna()]->getTipo() == Tipo::VITIMA))
+	{
+		m = NORTE;
+	}
+	else if (linha < TAMANHO_MAPA - 1 &&
+		(entidades[getLinha() + 1][getColuna()]->getTipo() == Tipo::FOGO ||
+		entidades[getLinha() + 1][getColuna()]->getTipo() == Tipo::VITIMA))
+	{
+		m = SUL;
+	}
+	else
+	{
+		m = rand() % NROLADOS;
+	}
+
+	switch (m)
+	{
+	case ESQUERDA:
+		if (coluna > 0)
+		{
+			coluna--;
+		}
+		break;
+	case DIREITA:
+		if (coluna < TAMANHO_MAPA - 1)
+		{
+			coluna++;
+		}
+		break;
+	case NORTE:
+		if (linha > 0)
+		{
+			linha--;
+		}
+		break;
+	case SUL:
+		if (linha < TAMANHO_MAPA - 1)
+		{
+			linha++;
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+void Bombeiro::carregar(std::shared_ptr<Entidade> vit)
+{
+	this->vit = vit;
+}
+
+void Bombeiro::descarregar()
+{
+	std::dynamic_pointer_cast<Vitima> (vit)->salvar();
+	vit = NULL;
+}
+
+/*==============================================================================================*/
+
+class Fogo : public Entidade
+{
+public:
+	Fogo(std::string r, int l, int c) : Entidade(r, Tipo::FOGO, l, c) {}
+	virtual void moverEntidade();
+};
+
+void Fogo::moverEntidade()
+{
+	linha = rand() % TAMANHO_MAPA;
+	coluna = rand() % TAMANHO_MAPA;
+}
+
+/*==============================================================================================*/
+
 /////////////////// Entidades
-
-using VetorPtrEntidades = std::vector<std::vector<std::shared_ptr<Entidade>>>;
-
-VetorPtrEntidades entidades;
-std::mutex m_mutex;
-VetorPtrEntidades iniEntidades();
-
-int n_bombeiros = 0;
-int tempo = 0;
-int n_vitimas_salvas = 0;
-int n_vitimas_fatais = 0;
-int n_refugiados = 0;
 
 VetorPtrEntidades iniEntidades()
 {
@@ -349,7 +400,6 @@ void setarEntidade(std::shared_ptr<Entidade> e, int linha, int coluna)
 	for (;;)
 	{
 		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-
 		{
 			{
 				std::lock_guard<std::mutex> guard(m_mutex);
@@ -378,14 +428,40 @@ void setarEntidade(std::shared_ptr<Entidade> e, int linha, int coluna)
 			}
 		}
 
+		if (e->getTipo() == Tipo::VITIMA)
+		{
+			if (std::dynamic_pointer_cast<Vitima> (e)->getSit() == SituacaoVitima::SALVO)
+			{
+				e->setLinha(TAMANHO_MAPA - 1);
+				e->setColuna(TAMANHO_MAPA - 3);
+				entidades[e->getLinha()][e->getColuna()] = std::make_shared<Refugiado>(std::string{ "R  " }, e->getLinha(), e->getColuna());
+			}
+			else if (std::dynamic_pointer_cast<Vitima> (e)->getTempo() > 0)
+			{
+				std::dynamic_pointer_cast<Vitima> (e)->diminuiVida();
+				continue;
+			}
+		}
+
 		// tirar da posicao anterior
 		if (verificaPosicaoValida(e->getLinha(), e->getColuna()))
 		{
 			// escopo do mutex
 			{
+				if (entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::VITIMA)
+				{
+					continue;
+				}
+
 				std::lock_guard<std::mutex> guard(m_mutex);
 				entidades[e->getLinha()][e->getColuna()] = std::make_shared<Entidade>(std::string{ "   " }, Tipo::VAZIO, e->getLinha(), e->getColuna());
 				entidades[e->getLinha()][e->getColuna()]->print();
+
+				if (entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::VITIMA &&
+					std::dynamic_pointer_cast<Vitima> (entidades[e->getLinha()][e->getColuna()])->getTempo() <= 0)
+				{
+					return;
+				}
 			}
 		}
 
@@ -397,15 +473,26 @@ void setarEntidade(std::shared_ptr<Entidade> e, int linha, int coluna)
 				(e->getTipo() == Tipo::REFUGIADO && entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::FOGO))
 			{
 				std::lock_guard<std::mutex> guard(m_mutex);
-				entidades[e->getLinha()][e->getColuna()] = std::make_shared<Vitima>(std::string{ "V  " }, e->getLinha(), e->getColuna());
+				e = std::make_shared<Vitima>(std::string{ "V  " }, e->getLinha(), e->getColuna());
+				entidades[e->getLinha()][e->getColuna()] = e;
+				n_refugiados--;
 			}
 			else if (e->getTipo() == Tipo::FOGO && entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::BOMBEIRO)
 			{
 				continue;
 			}
-			else if (e->getTipo() == Tipo::BOMBEIRO && entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::VITIMA)
+			else if (e->getTipo() == Tipo::BOMBEIRO && 
+					std::dynamic_pointer_cast<Bombeiro> (e)->getVit() == NULL &&
+					entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::VITIMA)
 			{
-				//bombeiro carregar
+				std::dynamic_pointer_cast<Bombeiro> (e)->carregar(entidades[e->getLinha()][e->getColuna()]);
+				n_vitimas_salvas++; // soh qdo levar pra ambulancia 
+			}
+			else if (e->getTipo() == Tipo::BOMBEIRO &&
+				std::dynamic_pointer_cast<Bombeiro> (e)->getVit() != NULL &&
+				e->getLinha() == TAMANHO_MAPA - 1)
+			{
+				std::dynamic_pointer_cast<Bombeiro> (e)->carregar(entidades[e->getLinha()][e->getColuna()]);
 				n_vitimas_salvas++; // soh qdo levar pra ambulancia 
 			}
 			else if (entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::VAZIO)
@@ -419,6 +506,11 @@ void setarEntidade(std::shared_ptr<Entidade> e, int linha, int coluna)
 				entidades[e->getLinha()][e->getColuna()]->print();
 			}
 		}
+
+		if (e->getTipo() == Tipo::FOGO)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+		}		
 		/*
 		else
 		{
@@ -440,23 +532,22 @@ void printAmbulancia()
 int main()
 {
 	entidades = iniEntidades();
-	std::vector<std::future<void>> futures;
 
 	printAmbulancia();
 
-	for (int i = 0; i < 10; ++i)
+	for (int i = 0; i < 5; ++i)
 	{
 		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 		std::mt19937::result_type seed = time(0);
 		auto random_ij = std::bind(std::uniform_int_distribution<int>(0, 9), std::mt19937(seed));
 		int l = random_ij(); int c = random_ij();
-		if (random_ij() % 3)
+		if (i == 0) //random_ij() % 3
 		{
 			std::shared_ptr<Bombeiro> b = std::make_shared<Bombeiro>(std::string{ "B  " }, l, c); // + std::to_string(i), l, c};
 			n_bombeiros++;
 			futures.push_back(std::async(std::launch::async, setarEntidade, b, l, c));
 		}
-		else if (random_ij() % 2)
+		else if (i != 1)
 		{
 			std::shared_ptr<Refugiado> f = std::make_shared<Refugiado>(std::string{ "R  " }, l, c); // + std::to_string(i), l, c};
 			n_refugiados++;
