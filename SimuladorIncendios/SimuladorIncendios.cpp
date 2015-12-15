@@ -153,7 +153,8 @@ int n_vitimas_fatais = 0;
 std::mutex m_vitimas_fatais;
 int n_refugiados = 0;
 std::mutex m_refugiados;
-std::mutex m_moveEntidade;
+int n_fogo = 0;
+std::mutex m_fogo;
 /*==============================================================================================*/
 
 class Refugiado : public Entidade
@@ -335,16 +336,19 @@ void Bombeiro::descarregar()
 
 class Fogo : public Entidade
 {
+	bool apagado = false;
 public:
 	Fogo(std::string r, int l, int c) : Entidade(r, Tipo::FOGO, l, c) {}
 	virtual void moverEntidade();
+	inline bool isApagado() { return apagado; }
+	inline void apagar() { apagado = true; }
 };
 
 void Fogo::moverEntidade()
 {
 	//linha = rand() % TAMANHO_MAPA;
 	//coluna = rand() % TAMANHO_MAPA;
-	std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+	//std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 	std::mt19937::result_type seed = time(0);
 	auto random_ij = std::bind(std::uniform_int_distribution<int>(0, 9), std::mt19937(seed));
 	linha = random_ij();
@@ -389,7 +393,14 @@ void setarEntidade(std::shared_ptr<Entidade> e, int linha, int coluna)
 	}
 	for (;;)
 	{
-		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+		if (e->getTipo() == Tipo::BOMBEIRO)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(500));
+		}
+		else
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+		}
 
 		{
 			std::lock_guard<std::mutex> guard(m_mutex);
@@ -407,6 +418,8 @@ void setarEntidade(std::shared_ptr<Entidade> e, int linha, int coluna)
 			std::cout << "Vitimas fatais " << n_vitimas_fatais << std::endl;
 			gotoxy(0, TAMANHO_MAPA + 5);
 			std::cout << "Vitimas salvas " << n_vitimas_salvas << std::endl;
+			gotoxy(0, TAMANHO_MAPA + 6);
+			std::cout << "N Fogos " << n_fogo << std::endl;
 		}
 
 		{
@@ -456,10 +469,11 @@ void setarEntidade(std::shared_ptr<Entidade> e, int linha, int coluna)
 			if (verificaPosicaoValida(e->getLinha(), e->getColuna()))
 			{
 				// refugiado pega fogo, vira vitima
-				if ((e->getTipo() == Tipo::FOGO && entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::REFUGIADO) ||
-					(e->getTipo() == Tipo::REFUGIADO && entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::FOGO))
+				//if ((e->getTipo() == Tipo::FOGO && entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::REFUGIADO) ||
+				//	(e->getTipo() == Tipo::REFUGIADO && entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::FOGO))
+				if (e->getTipo() == Tipo::REFUGIADO && entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::FOGO)
 				{
-					if (e->getTipo() == Tipo::REFUGIADO)
+					//if (e->getTipo() == Tipo::REFUGIADO)
 					{
 						std::lock_guard<std::mutex> guard(m_refugiados);
 						n_refugiados--;
@@ -468,9 +482,16 @@ void setarEntidade(std::shared_ptr<Entidade> e, int linha, int coluna)
 					entidades[e->getLinha()][e->getColuna()] = e;
 				}
 				// fogo e bombeiro, fogo apaga
-				else if (e->getTipo() == Tipo::FOGO && entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::BOMBEIRO)
+				else if (e->getTipo() == Tipo::FOGO && std::dynamic_pointer_cast<Fogo> (e)->isApagado())
 				{
+					std::lock_guard<std::mutex> guard(m_fogo);
+					n_fogo--;
 					return;
+				}
+				else if (e->getTipo() == Tipo::BOMBEIRO && entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::FOGO)
+				{
+					std::dynamic_pointer_cast<Fogo> (entidades[e->getLinha()][e->getColuna()])->apagar();
+					entidades[e->getLinha()][e->getColuna()] = e;
 				}
 				// bombeiro pega vitima
 				else if (e->getTipo() == Tipo::BOMBEIRO &&
@@ -501,7 +522,7 @@ void setarEntidade(std::shared_ptr<Entidade> e, int linha, int coluna)
 
 		if (e->getTipo() == Tipo::FOGO)
 		{
-		//	std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+			std::this_thread::sleep_for(std::chrono::milliseconds(5000));
 		}
 	}
 }
@@ -528,18 +549,19 @@ int main()
 		int l = random_ij(); int c = random_ij();
 		if (x == 0) //random_ij() % 3
 		{
-			std::shared_ptr<Bombeiro> b = std::make_shared<Bombeiro>(std::string{ "B  " }, l, c); // + std::to_string(i), l, c};
 			n_bombeiros++;
+			std::shared_ptr<Bombeiro> b = std::make_shared<Bombeiro>(std::string{ "B  " }, l, c); // + std::to_string(i), l, c};
 			futures.push_back(std::async(std::launch::async, setarEntidade, b, l, c));
 		}
-		else if (x < 5)
+		else if (x < 6)
 		{
-			std::shared_ptr<Refugiado> r = std::make_shared<Refugiado>(std::string{ "R  " }, l, c); // + std::to_string(i), l, c};
 			n_refugiados++;
+			std::shared_ptr<Refugiado> r = std::make_shared<Refugiado>(std::string{ "R  " }, l, c); // + std::to_string(i), l, c};
 			futures.push_back(std::async(std::launch::async, setarEntidade, r, l, c));
 		}
 		else
 		{
+			n_fogo++;
 			std::shared_ptr<Fogo> f = std::make_shared<Fogo>(std::string{ "F" + std::to_string(x) }, l, c); // + std::to_string(i), l, c};
 			futures.push_back(std::async(std::launch::async, setarEntidade, f, l, c));
 		}
