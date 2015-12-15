@@ -346,9 +346,6 @@ public:
 
 void Fogo::moverEntidade()
 {
-	//linha = rand() % TAMANHO_MAPA;
-	//coluna = rand() % TAMANHO_MAPA;
-	//std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 	std::mt19937::result_type seed = time(0);
 	auto random_ij = std::bind(std::uniform_int_distribution<int>(0, 9), std::mt19937(seed));
 	linha = random_ij();
@@ -469,11 +466,8 @@ void setarEntidade(std::shared_ptr<Entidade> e, int linha, int coluna)
 			if (verificaPosicaoValida(e->getLinha(), e->getColuna()))
 			{
 				// refugiado pega fogo, vira vitima
-				//if ((e->getTipo() == Tipo::FOGO && entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::REFUGIADO) ||
-				//	(e->getTipo() == Tipo::REFUGIADO && entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::FOGO))
 				if (e->getTipo() == Tipo::REFUGIADO && entidades[e->getLinha()][e->getColuna()]->getTipo() == Tipo::FOGO)
 				{
-					//if (e->getTipo() == Tipo::REFUGIADO)
 					{
 						std::lock_guard<std::mutex> guard(m_refugiados);
 						n_refugiados--;
@@ -562,7 +556,7 @@ int main()
 		else
 		{
 			n_fogo++;
-			std::shared_ptr<Fogo> f = std::make_shared<Fogo>(std::string{ "F" + std::to_string(x) }, l, c); // + std::to_string(i), l, c};
+			std::shared_ptr<Fogo> f = std::make_shared<Fogo>(std::string{ "F  " }, l, c); // + std::to_string(i), l, c};
 			futures.push_back(std::async(std::launch::async, setarEntidade, f, l, c));
 		}
 	}
